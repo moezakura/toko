@@ -1722,6 +1722,8 @@ dependencies = [
  "futures-util",
  "log",
  "mongodb",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

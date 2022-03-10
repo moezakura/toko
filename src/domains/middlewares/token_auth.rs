@@ -1,7 +1,9 @@
-use actix_web::error::ErrorUnauthorized;
+use crate::domains::models::error_response::ErrorResponse;
+use actix_web::body::EitherBody;
+use actix_web::http::StatusCode;
 use actix_web::{
     dev::{forward_ready, Service, ServiceRequest, ServiceResponse, Transform},
-    Error,
+    Error, HttpResponse,
 };
 use futures_util::future::LocalBoxFuture;
 use std::future::{ready, Ready};
@@ -21,10 +23,10 @@ where
     S::Future: 'static,
     B: 'static,
 {
-    type Response = ServiceResponse<B>;
+    type Response = ServiceResponse<EitherBody<B>>;
     type Error = Error;
-    type InitError = ();
     type Transform = TokenAuthMiddleware<S>;
+    type InitError = ();
     type Future = Ready<Result<Self::Transform, Self::InitError>>;
 
     fn new_transform(&self, service: S) -> Self::Future {
@@ -42,7 +44,7 @@ where
     S::Future: 'static,
     B: 'static,
 {
-    type Response = ServiceResponse<B>;
+    type Response = ServiceResponse<EitherBody<B>>;
     type Error = Error;
     type Future = LocalBoxFuture<'static, Result<Self::Response, Self::Error>>;
 
@@ -57,15 +59,27 @@ where
 
         auth = match _auth {
             Some(auth) => Ok(auth.to_str().unwrap()),
-            None => return Box::pin(async move { Err(ErrorUnauthorized("must be API KEY")) }),
+            None => {
+                return Box::pin(async move {
+                    let (req, _p1) = _req.into_parts();
+                    let err_response = ErrorResponse {
+                        code: StatusCode::UNAUTHORIZED.as_u16(),
+                        error: String::from("unauthorized"),
+                        message: String::from("need authorization header"),
+                    };
+
+                    let res = HttpResponse::build(StatusCode::UNAUTHORIZED)
+                        .content_type("application/json")
+                        .json(err_response)
+                        .map_into_right_body();
+
+                    Ok(ServiceResponse::new(req, res))
+                });
+            }
         };
         println!("your token: {:?}", auth);
 
-        let fut = self.service.call(_req);
-
-        Box::pin(async {
-            let res = fut.await?;
-            Ok(res)
-        })
+        let res = self.service.call(_req);
+        Box::pin(async move { res.await.map(ServiceResponse::map_into_left_body) })
     }
 }
