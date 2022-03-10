@@ -81,3 +81,11 @@ fabric.properties
 
 .idea/
 
+
+
+# Added by cargo
+
+/target
+
+/data
+/db
